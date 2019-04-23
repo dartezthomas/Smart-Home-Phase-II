@@ -48,7 +48,7 @@ def clientConn(name, conn):
 
 def sensor_module_conn():
     port = 4000 # port number
-    host = '192.168.1.27' #ip address of hub
+    host = '192.168.1.23' #ip address of hub
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #creating a socket
     s.bind((host, port)) 
