@@ -38,16 +38,45 @@ def insertBedRoomRSSI(RSSI_1, RSSI_2, RSSI_3):
     cursor.close()
     conn.close()
 
-def insertMachineLearningLightData(old_light, new_level):
+def insertMachineLearningExtraRoom(old_light, new_level):
     conn = openDB()
     cursor = conn.cursor()
-    query = ("INSERT INTO light_learning(ID, x_value, y_value) VALUES (NULL, %s, %s, %s)")
+    query = ("INSERT INTO light_learning_extra_room(ID, x_value, y_value) VALUES (NULL, %s, %s)")
     query1 = (old_light, new_level)
     cursor.execute(query, query1)
     conn.commit()
     cursor.close()
     conn.close()
-    
+
+def insertMachineLearningBedRoom(old_light, new_level):
+    conn = openDB()
+    cursor = conn.cursor()
+    query = ("INSERT INTO light_learning_bed_room(ID, x_value, y_value) VALUES (NULL, %s, %s)")
+    query1 = (old_light, new_level)
+    cursor.execute(query, query1)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def insertMachineLearningLivingRoom(old_light, new_level):
+    conn = openDB()
+    cursor = conn.cursor()
+    query = ("INSERT INTO light_learning_living_room(ID, x_value, y_value) VALUES (NULL, %s, %s)")
+    query1 = (old_light, new_level)
+    cursor.execute(query, query1)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def insertMachineLearningLivingRoom(old_light, new_level):
+    conn = openDB()
+    cursor = conn.cursor()
+    query = ("INSERT INTO light_learning_living_room(ID, x_value, y_value) VALUES (NULL, %s, %s)")
+    query1 = (old_light, new_level)
+    cursor.execute(query, query1)
+    conn.commit()
+    cursor.close()
+    conn.close()
     
 def insertLivingRoomRSSI(RSSI_1, RSSI_2, RSSI_3):
     conn = openDB()
@@ -92,6 +121,8 @@ def getLivingRoom():
         return None
     return data
 
+
+
 def Least_Squares(room):
     conn = openDB()
     cursor = conn.cursor()
@@ -107,7 +138,7 @@ def Least_Squares(room):
             x_coords.append(row[0])
             y_coords.append(row[1])
             
-    if (room == 'bedroom'):
+    elif (room == 'bedroom'):
         query = "SELECT x_values_lux, y_values_coords from light_learning_bed_room"
         cursor.execute(query)
         # fetch all of the rows from the query
@@ -117,7 +148,7 @@ def Least_Squares(room):
             x_coords.append(row[0])
             y_coords.append(row[1])
     
-    if (room == 'living-room'):
+    elif (room == 'living-room'):
         query = "SELECT x_values_lux, y_values_coords from light_learning_living_room"
         cursor.execute(query)
         # fetch all of the rows from the query
@@ -148,7 +179,7 @@ def Least_Squares(room):
     
 def hub_conn():
     port = 6000 # port number
-    
+    old_room = ''
     host = '192.168.1.30' #ip address of cloud
     
     dataset = createDataSet()
@@ -185,10 +216,12 @@ def hub_conn():
                 
         room_prediction = k_nearest_neighbor(dataset, RSSI_array, k)
         print(room_prediction)
+
+
         
         #Use Machine Learning to create/add to learned light levels
-        old_light,new_level = machine_learning_light(light,room_prediction)
-        insertMachineLearningLightData(old_light, new_level)
+        #old_light,new_level = machine_learning_light(light,room_prediction)
+        #insertMachineLearningLightData(old_light, new_level)
         
         '''
         in this section of the code needs to have to output of Least Squares
@@ -199,29 +232,137 @@ def hub_conn():
         
         output = light*(m) + (y_int)        
         output_level = 100 - output
-        
+
+        #send to hub to adjust light level 
+
         client.send(output_level.encode('utf-8'))
         client.close()
+
+        #
+
+        if (old_room != room_prediction):
+            light_poller(light, room_prediction, output)
+        
+        
+
+        old_room = room_prediction
         
         #client.send(output.encode('utf-8'))
         #client.close()
             
+def light_poller(light, room, output_level):
+    time.sleep(60)
+    topLevelUrl = 'http://192.168.1.23:8083'
+    LoginUrl = topLevelUrl + '/ZAutomation/api/v1/login'
+
+    username = 'admin'
+    password = 'laurensellers'
+
+    LoginHeader = {'User-Agent': 'Mozilla/5.0', 'Cotent-Type': 'application/json'}
+    Formlogin = '{"form": true, "login": "'+username+'", "password": "'+password+'", "keepme": false, "default_ui": 1}'
+
+    session = requests.Session()
+    session.post(LoginUrl, headers=LoginHeader, data=Formlogin)
+
+    RequestUrl_Poll = topLevelUrl + '/ZAutomation/api/v1/devices/ZWayVDev_zway_10-0-38'
+    response = session.get(RequestUrl_Poll)
+    #r = session.put(RequestUrl_Poll)
+    res = json.loads(response.text)
+    new_level = res['data']['metrics']['level']
+    if (output_level != new_level):
+        #update db for light 
+        if (room == 'extra-room'):
+            light_learning_extra_room(light, new_level)
+
+        elif (room == 'bedroom'):
+            light_learning_bed_room(light, new_level)
+
+        elif (room == 'living-room'):
+            light_learning_living_room(light, new_level)
+
+
+
+
+
+
+
+
+
+
+def phone_listener():
+
+    port = 5000 # port number
+    
+    host = '192.168.1.30' #ip address of cloud
+    
+    dataset = createDataSet()
+    k = 3
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #creating a socket
+    s.bind((host, port)) 
+
+    s.listen(5) #listen for max 5 connections
+    #print("Hub listening....")
+    #print(threading.active_count())
+    print("Cloud Listening...")
+    while True:
+        client, address = s.accept()
+        address = str(address)
+        print("Connecting with " + str(address))
+
+        phone_lightlevel = client.recv(1024).decode('UTF-8')
+
+        topLevelUrl = 'http://192.168.1.23:8083'
+        LoginUrl = topLevelUrl + '/ZAutomation/api/v1/login'
+
+        username = 'admin'
+        password = 'laurensellers'
+
+        LoginHeader = {'User-Agent': 'Mozilla/5.0', 'Cotent-Type': 'application/json'}
+        Formlogin = '{"form": true, "login": "'+username+'", "password": "'+password+'", "keepme": false, "default_ui": 1}'
+
+        session = requests.Session()
+        session.post(LoginUrl, headers=LoginHeader, data=Formlogin)
+
+        RequestUrl_Poll = topLevelUrl + '/ZAutomation/api/v1/devices/ZWayVDev_zway_10-0-38'
+        response = session.get(RequestUrl_Poll)
+
+        RequestUrl = topLevelUrl + '/ZAutomation/api/v1/devices/ZWayVDev_zway_10-0-38/command/exact?level=' + phone_lightlevel
+
         
+
+        
+        
+
+
         
 
 #add light learning functions here
 #########################
         
 def machine_learning_light(light,room):
+    i = 0
+    old_light = 0
+    old_level = 0
+    old_room = ''
+    topLevelUrl = 'http://192.168.1.23:8083'
+    LoginUrl = topLevelUrl + '/ZAutomation/api/v1/login'
+    username = 'admin'
+    password = 'laurensellers'
+
+    LoginHeader = {'User-Agent': 'Mozilla/5.0', 'Cotent-Type': 'application/json'}
+    Formlogin = '{"form": true, "login": "'+username+'", "password": "'+password+'", "keepme": false, "default_ui": 1}'
+
+    session = requests.Session()
+    session.post(LoginUrl, headers=LoginHeader, data=Formlogin)
     if (light == old_light):
         i = i+1
         if(i==3):
             RequestURL = topLevelUrl+'/ZAutomation/api/v1/devicews/ZWayVDev_zway_10-0-38/command/update'
             response = session.get(RequestUrl)
             response = session.get(RequestUrl) #Called a second time to send it back to be outputted in the shell
-            RequestUrl_1 = topLevelUrl + '/ZAutomation/api/v1/devices/ZWayVDev_zway_10-0-38'
-            response = session.get(RequestUrl_1)
-            r = session.put(RequestUrl_1)
+            RequestUrl_Poll = topLevelUrl + '/ZAutomation/api/v1/devices/ZWayVDev_zway_10-0-38'
+            response = session.get(RequestUrl_Poll)
+            #r = session.put(RequestUrl_Poll)
             res = json.loads(response.text)
             new_level = res['data']['metrics']['level']
             if (new_level!=old_level and room != old_room):
@@ -366,7 +507,7 @@ def plot_regression_line(x, y, b):
 def main():
     
 k = 3
-old_message = 0
+
 old_light = 0
 old_level = 0
 old_room = ''
